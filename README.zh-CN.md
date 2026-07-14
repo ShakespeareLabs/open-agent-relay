@@ -65,6 +65,16 @@ python -m pip install "git+https://github.com/ShakespeareLabs/open-agent-relay.g
 
 只有参与开发时才需要克隆仓库。首个正式安装包发布后，主要安装命令会简化为 `pipx install open-agent-relay`。
 
+## 端到端示例
+
+[`examples/`](examples/) 目录提供三条可复用路径：
+
+- 对本地 CSV 数据生成零依赖、只读报告；
+- 在独立只读工作区中运行临时 Codex 审查；
+- 使用非交互 Plan 模式，并禁用写入和联网工具的 Claude Code 审查。
+
+建议先运行本地报告，确认网络与认证正常后，再接入真实 Agent。
+
 ## 发布者：发布一个能力
 
 发布者拥有已经能正常工作的 Agent 或自动化。

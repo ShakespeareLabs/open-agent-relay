@@ -66,6 +66,16 @@ python -m pip install "git+https://github.com/ShakespeareLabs/open-agent-relay.g
 
 Cloning the repository is only needed for development. After the first packaged release, the primary installation command will become `pipx install open-agent-relay`.
 
+## End-to-end examples
+
+The [`examples/`](examples/) directory contains three reusable paths:
+
+- a zero-dependency, read-only report over local CSV data;
+- an ephemeral Codex review in a dedicated read-only workspace;
+- a Claude Code review using non-interactive plan mode with write and web tools blocked.
+
+Start with the local report to verify networking and authentication before connecting an Agent.
+
 ## Publisher: share a capability
 
 The publisher owns the working Agent or automation.
