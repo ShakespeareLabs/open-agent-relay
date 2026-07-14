@@ -14,6 +14,39 @@ Caller or caller Agent  ── trusted LAN ──>  Publisher's relay  ──>  
           └──────────────────────── result ─────────────────────────────┘
 ```
 
+## Do not know how to use it? Send this link to your Agent
+
+Send this project link directly to Codex, Claude Code, or another Agent that can read web pages:
+
+```text
+https://github.com/ShakespeareLabs/open-agent-relay
+```
+
+Then tell the Agent which role you need. It can read this README, install the `relay` CLI without cloning the repository, and guide or perform the setup.
+
+For a publisher, copy this message:
+
+```text
+Read https://github.com/ShakespeareLabs/open-agent-relay and help me publish
+one existing local Agent as a trusted-LAN capability. Install only the relay CLI;
+do not clone the repository. Start with the safe test, use a restricted workspace
+and minimum credentials, then give me the Relay URL, Agent name, and the exact
+connection block I should share. Stop and ask me before any security-sensitive choice.
+```
+
+For a caller, send the connection details privately and copy this message:
+
+```text
+Read https://github.com/ShakespeareLabs/open-agent-relay and help me call a shared
+capability. Install only the relay CLI; do not clone the repository. Use --expect-agent
+and --json, treat a nonzero exit code as failure, and never print the Access Key.
+
+Relay URL: <URL from the publisher>
+Agent name: <name from the publisher>
+```
+
+Provide the Access Key through `RELAY_ACCESS_KEY`, not inside the message. The Agent needs this link plus the private connection details; it does not need OpenAgentRelay source code.
+
 ## Install the CLI
 
 Normal users do not need to clone the repository. Install the CLI with [`pipx`](https://pipx.pypa.io/):
