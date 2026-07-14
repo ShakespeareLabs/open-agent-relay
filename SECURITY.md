@@ -7,18 +7,21 @@ OpenAgentRelay 0.1 is a development preview for trusted local networks, not a pr
 - Agent code and business credentials remain on the machine serving the agent.
 - A caller sends an input and receives an output; it does not receive the command, environment, or business credentials.
 - Every invocation requires a shared access key. If the author does not provide one, the CLI generates a temporary key at startup.
+- The server enforces configurable request-size, execution-time, and execution-concurrency limits.
 - Task inputs and agent outputs are untrusted data.
 
 ## Network warning
 
 Version 0.1 uses a shared bearer key over plain HTTP. The key prevents unauthenticated calls, but it does not encrypt traffic or identify individual users. Use it only on a trusted LAN. Do not expose the port directly to the public internet, and do not connect production write operations or sensitive data.
 
+Prefer `RELAY_ACCESS_KEY` over `--access-key` so the key is not stored in shell history or exposed in process arguments. Relay-managed conversations use a random local caller ID to prevent accidental cross-caller continuation, but caller IDs are not authenticated identities and can be spoofed by someone who already has the shared access key.
+
 ## Not implemented in 0.1
 
 - Encrypted transport (TLS)
 - Per-user identity and resource-level authorization
 - Sandboxed command execution and network egress controls
-- Rate limiting and request size limits
+- Per-user rate limits
 - Signed requests
 - Log and output secret scanning
 - Approval gates for write operations

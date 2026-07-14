@@ -54,11 +54,14 @@ OpenAgentRelay prints a temporary access key. Share that key and this computer's
 Install OpenAgentRelay, then call the machine directly:
 
 ~~~bash
+read -s RELAY_ACCESS_KEY
+export RELAY_ACCESS_KEY
 relay ask \
   --target http://192.168.1.42:8787 \
-  --access-key "KEY_PRINTED_BY_RELAY_SERVE" \
   "hello team"
 ~~~
+
+Using `RELAY_ACCESS_KEY` keeps the key out of the command line and shell history.
 
 The teammate receives:
 
@@ -85,11 +88,26 @@ A teammate calls it with:
 ~~~bash
 relay ask \
   --target http://192.168.1.42:8787 \
-  --access-key "KEY_PRINTED_BY_RELAY_SERVE" \
   "Show the campaigns with the biggest CPA increase this week"
 ~~~
 
 OpenAgentRelay passes the request to ads_report.py and returns whatever the script prints.
+
+## Continue a conversation
+
+Direct calls are stateless by default. Start an isolated Relay-managed conversation when follow-up questions need prior context:
+
+~~~bash
+relay ask --target http://192.168.1.42:8787 --new-conversation --json "Analyze this account"
+~~~
+
+The response contains a random `conversation_id`. Continue it with:
+
+~~~bash
+relay ask --target http://192.168.1.42:8787 --conversation conv_... "Which campaign is worst?"
+~~~
+
+Relay keeps a bounded transcript in memory and passes it to a fresh agent execution. Conversations expire after one hour by default and disappear when the server restarts. A random caller ID stored locally binds the conversation to the caller; it is not a replacement for per-user authentication.
 
 ## What can be shared?
 
@@ -121,7 +139,7 @@ An agent can still use Skills internally. Relay only handles the direct request 
 
 Each server has one shared access key:
 
-- provide one with --access-key or RELAY_ACCESS_KEY, or
+- provide one with `RELAY_ACCESS_KEY` (recommended) or `--access-key`, or
 - let relay serve generate a temporary key at startup.
 
 This key controls who can invoke the agent. It is not the Google, database, or other business credential used by the agent.
@@ -139,6 +157,9 @@ Read [SECURITY.md](SECURITY.md) before connecting a real agent.
 - an agent description at /.well-known/agent-card.json
 - a stdin/stdout adapter for existing commands
 - structured errors that hide local stderr from callers
+- configurable execution and client timeouts
+- request-size and execution-concurrency limits
+- optional bounded, expiring conversations
 
 ## What version 0.1 does not include
 
@@ -149,6 +170,8 @@ Read [SECURITY.md](SECURITY.md) before connecting a real agent.
 - progress updates or file transfer
 - multiple agents behind one address
 - public-internet connectivity
+
+Run `relay serve --help` to configure execution timeout, request size, concurrency, and conversation expiry.
 
 ## Want the Hub experiment?
 

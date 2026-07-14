@@ -25,6 +25,9 @@ Local script or agent + its own tools and credentials
 
 - Local command runner using stdin/stdout
 - HTTP/JSON client
+- Bounded in-memory conversation store with caller binding and expiry
+
+The default request is stateless. Optional conversations store a bounded transcript, not a Codex session, and prepend relevant prior turns to the next execution. The server publishes its execution timeout in the agent card so clients can select a compatible request timeout automatically.
 
 ## Planned adapters
 

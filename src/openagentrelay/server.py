@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import threading
 from collections.abc import Callable
 from hmac import compare_digest
 from http import HTTPStatus
@@ -9,6 +11,15 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .runner import CommandFailed
+from .conversations import ConversationForbidden, ConversationNotFound, ConversationStore
+
+
+class RequestProblem(Exception):
+    def __init__(self, status: int, code: str, message: str):
+        super().__init__(message)
+        self.status = status
+        self.code = code
+        self.message = message
 
 
 INDEX_HTML = """<!doctype html>
@@ -37,11 +48,19 @@ class DirectServer(ThreadingHTTPServer):
         description: str,
         executor: Callable[[object], object],
         access_key: str,
+        execution_timeout: int = 600,
+        max_request_bytes: int = 1_048_576,
+        max_concurrency: int = 4,
+        conversation_ttl: int = 3600,
     ) -> None:
         self.capability_name = name
         self.description = description
         self.executor = executor
         self.access_key = access_key
+        self.execution_timeout = execution_timeout
+        self.max_request_bytes = max_request_bytes
+        self.execution_slots = threading.BoundedSemaphore(max_concurrency)
+        self.conversations = ConversationStore(ttl_seconds=conversation_ttl)
         super().__init__(address, DirectHandler)
 
 
@@ -56,10 +75,20 @@ class DirectHandler(BaseHTTPRequestHandler):
         return compare_digest(self.headers.get("authorization", ""), expected)
 
     def _json_body(self) -> dict[str, Any]:
-        length = int(self.headers.get("content-length", "0"))
+        try:
+            length = int(self.headers.get("content-length", "0"))
+        except ValueError as exc:
+            raise RequestProblem(HTTPStatus.BAD_REQUEST, "INVALID_CONTENT_LENGTH", "content-length must be an integer") from exc
+        if length < 0:
+            raise RequestProblem(HTTPStatus.BAD_REQUEST, "INVALID_CONTENT_LENGTH", "content-length cannot be negative")
+        if length > self.server.max_request_bytes:
+            raise RequestProblem(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "REQUEST_TOO_LARGE", "request body is too large")
         if length == 0:
             return {}
-        return json.loads(self.rfile.read(length))
+        data = json.loads(self.rfile.read(length))
+        if not isinstance(data, dict):
+            raise RequestProblem(HTTPStatus.BAD_REQUEST, "INVALID_REQUEST", "request body must be a JSON object")
+        return data
 
     def _send_json(self, status: int, payload: object) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode()
@@ -93,6 +122,11 @@ class DirectHandler(BaseHTTPRequestHandler):
                     "description": self.server.description,
                     "transport": "openagentrelay-direct-v1",
                     "authentication": "bearer",
+                    "sessions": "relay-managed",
+                    "limits": {
+                        "execution_timeout_seconds": self.server.execution_timeout,
+                        "max_request_bytes": self.server.max_request_bytes,
+                    },
                 },
             )
             return
@@ -111,13 +145,53 @@ class DirectHandler(BaseHTTPRequestHandler):
             if "input" not in data:
                 self._error(HTTPStatus.BAD_REQUEST, "INVALID_REQUEST", "missing field: input")
                 return
-            result = self.server.executor(data["input"])
+            new_conversation = data.get("new_conversation", False)
+            conversation_id = data.get("conversation_id")
+            if not isinstance(new_conversation, bool):
+                raise RequestProblem(HTTPStatus.BAD_REQUEST, "INVALID_REQUEST", "new_conversation must be a boolean")
+            if new_conversation and conversation_id:
+                raise RequestProblem(HTTPStatus.BAD_REQUEST, "INVALID_REQUEST", "choose new_conversation or conversation_id, not both")
+            caller_id = self.headers.get("x-relay-caller-id", "")
+            conversation = None
+            if new_conversation:
+                conversation = self.server.conversations.create(caller_id)
+            elif conversation_id:
+                if not isinstance(conversation_id, str):
+                    raise RequestProblem(HTTPStatus.BAD_REQUEST, "INVALID_REQUEST", "conversation_id must be a string")
+                conversation = self.server.conversations.get(conversation_id, caller_id)
+
+            lock = conversation.lock if conversation else threading.Lock()
+            with lock:
+                effective_input = (
+                    self.server.conversations.render(conversation, data["input"])
+                    if conversation
+                    else data["input"]
+                )
+                if not self.server.execution_slots.acquire(blocking=False):
+                    raise RequestProblem(HTTPStatus.TOO_MANY_REQUESTS, "BUSY", "agent concurrency limit reached")
+                try:
+                    result = self.server.executor(effective_input)
+                finally:
+                    self.server.execution_slots.release()
+                if conversation:
+                    self.server.conversations.append(conversation, data["input"], result)
+            payload = {"capability": self.server.capability_name, "result": result}
+            if conversation:
+                payload["conversation_id"] = conversation.id
             self._send_json(
                 HTTPStatus.OK,
-                {"capability": self.server.capability_name, "result": result},
+                payload,
             )
+        except RequestProblem as exc:
+            self._error(exc.status, exc.code, exc.message)
         except json.JSONDecodeError:
             self._error(HTTPStatus.BAD_REQUEST, "INVALID_JSON", "request body must be valid JSON")
+        except ConversationNotFound as exc:
+            self._error(HTTPStatus.NOT_FOUND, exc.code, str(exc))
+        except ConversationForbidden as exc:
+            self._error(HTTPStatus.FORBIDDEN, exc.code, str(exc))
+        except subprocess.TimeoutExpired:
+            self._error(HTTPStatus.GATEWAY_TIMEOUT, "EXECUTION_TIMEOUT", "agent execution timed out")
         except CommandFailed as exc:
             print(f"Agent command failed locally: {exc.detail}")
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "EXECUTION_FAILED", str(exc))
@@ -134,6 +208,10 @@ def serve(
     description: str,
     executor: Callable[[object], object],
     access_key: str,
+    execution_timeout: int = 600,
+    max_request_bytes: int = 1_048_576,
+    max_concurrency: int = 4,
+    conversation_ttl: int = 3600,
 ) -> None:
     server = DirectServer(
         (host, port),
@@ -141,6 +219,10 @@ def serve(
         description=description,
         executor=executor,
         access_key=access_key,
+        execution_timeout=execution_timeout,
+        max_request_bytes=max_request_bytes,
+        max_concurrency=max_concurrency,
+        conversation_ttl=conversation_ttl,
     )
     print(f"Serving {name} on http://{host}:{port}")
     server.serve_forever()
