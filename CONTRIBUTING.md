@@ -11,5 +11,4 @@ python -m pip install -e .
 python -m unittest discover -s tests -v
 ```
 
-Keep the default path dependency-free and local-first. New execution, identity, storage, and protocol implementations should sit behind explicit adapters.
-
+Keep the default path dependency-free, local-first, and Hub-free. The `main` branch is for direct local-network access; the `hub-mode` branch preserves the asynchronous Hub experiment. New execution, identity, and protocol implementations should sit behind explicit adapters.

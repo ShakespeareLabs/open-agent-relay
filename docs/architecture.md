@@ -1,40 +1,37 @@
 # Architecture
 
-OpenAgentRelay separates a control plane from execution domains.
+The `main` branch implements direct local-network access without a Hub.
 
 ```text
-Web / CLI / Agent
+Teammate CLI / Agent
        |
+       | HTTP request over a trusted LAN
        v
-Hub: capability registry + task lifecycle
+OpenAgentRelay server on the author's machine
        |
-       v  outbound polling
-Runner: local process / container / remote A2A agent
-       |
+       | stdin / stdout
        v
-Agent code + tools + secrets stay in the execution domain
+Local script or agent + its own tools and credentials
 ```
 
-## Public concepts
+## Public interface
 
-- **Capability** describes what an agent can do, not how it is implemented.
-- **Task** is a durable request with an observable lifecycle.
-- **Artifact/Event** carries progress and results without exposing implementation details.
+- `GET /.well-known/agent-card.json` describes the available agent.
+- `POST /v1/invoke` sends one input and waits for one result.
+- `relay serve` exposes a local command.
+- `relay ask` calls a known machine directly.
 
-## Current adapters
+## Current execution adapter
 
-- In-memory Hub store
 - Local command runner using stdin/stdout
 - HTTP/JSON client
 
 ## Planned adapters
 
-- SQLite and PostgreSQL stores
-- OIDC identity and policy enforcement
-- Container and hosted runners
-- A2A ingress/egress
-- MCP exposure
-- Object storage for artifacts
+- TLS and device identity
+- Local-network discovery
+- Container runners
+- A2A-compatible direct invocation
+- Structured progress and file transfer
 
-The project's own model remains capability/task/event. A2A and MCP are compatibility adapters rather than the core domain model.
-
+The older asynchronous Hub experiment is preserved on the `hub-mode` branch. It is intentionally separate from the direct mode so callers do not need to understand two network models at once.

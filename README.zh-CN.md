@@ -2,181 +2,158 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **让任何本地 Agent 或自动化，成为整个团队都能直接使用的能力。**
+> **让任何本地 Agent 或自动化，成为团队可以直接调用的能力。**
 
-## 这个项目是做什么的？
+`main` 分支先从最简单的模式开始：在可信局域网内直接调用。
 
-假设你写了一个脚本，可以查询广告数据、整理用户访谈，或者生成周报。
+## 它解决什么问题？
 
-它在你的电脑上已经能正常工作。但是同事想用时，你通常需要把下面这些东西发给他：
+你的电脑上已经有一个能正常工作的 Agent 或脚本，同事也想使用。
 
-- 代码
-- 安装说明
-- 依赖
-- Prompt 和规则
-- API Token 或账号配置
+通常你需要把代码、依赖、安装说明、Prompt 和凭证发给他，让他在自己的电脑上再运行一份。
 
-然后每位同事都要在自己的电脑上重新安装和维护一份。
+OpenAgentRelay 让同事直接调用你电脑上已经能运行的这一份。
 
-OpenAgentRelay 换了一种方式：
+~~~text
+同事的电脑  ──局域网──>  你的电脑  ──>  你的 Agent
+                              |
+同事收到结果  <───────────────┘
+~~~
 
-1. 已经能运行的 Agent 或脚本继续留在你的电脑或服务器上。
-2. 你在团队 Hub 中给它登记一个名字，例如 `ads-report`。
-3. 同事把需求提交给这个名字。
-4. 你的 Agent 执行任务，再把结果返回给同事。
+main 分支不需要 Hub。代码、运行环境、Prompt 和业务凭证继续留在你的电脑上。
 
-同事可以直接使用结果，不需要安装你的项目，也不需要拿到你的凭证副本。
+## 两台电脑如何使用？
 
-## 一个简单例子
+两台电脑需要连接同一个可信局域网。
 
-你本地有一个叫 `ads_report.py` 的脚本。
+### 1. 在拥有 Agent 的电脑上
 
-通过下面的命令把它接入团队任务中心：
+安装项目：
 
-```bash
-relay expose \
-  --name ads-report \
-  --description "查询广告数据并生成报告" \
-  -- python ads_report.py
-```
-
-同事可以提交：
-
-```bash
-relay ask \
-  --agent ads-report \
-  --wait \
-  "找出本周 CPA 上涨最多的广告系列"
-```
-
-OpenAgentRelay 会把需求交给你正在运行的脚本，然后把脚本的结果返回给同事。
-
-脚本仍然在你控制的环境中运行，它的代码和凭证不需要交给调用者。
-
-## 只能接入 AI Agent 吗？
-
-不是。下面这些都可以接入：
-
-- AI Agent
-- Python 或 Shell 脚本
-- 内部自动化
-- 数据查询工具
-- 报告生成器
-- 未来通过适配器接入的 HTTP 或 A2A Agent
-
-OpenAgentRelay 把这些统一称为**能力**：能够接收任务并返回结果的东西。
-
-## 它和共享 Skill 有什么不同？
-
-Skill 是在教另一个 Agent **如何完成一件事**。使用者需要安装 Skill，并自己准备它需要的工具、环境和凭证。
-
-OpenAgentRelay 是让其他人**直接使用一个已经能够运行的东西**。
-
-| 共享 Skill | 使用 OpenAgentRelay |
-|---|---|
-| 每个人安装一份 | 作者维护一个可运行版本 |
-| 每个人配置依赖 | 作者维护运行环境 |
-| 每个人配置凭证 | 凭证可以留在 Runner 所在环境 |
-| 更新后需要重新安装 | 作者更新一次即可 |
-| 任务分散在每台电脑执行 | 请求和结果统一经过任务 Hub |
-
-两者可以一起使用。一个 Agent 内部仍然可以使用许多 Skill，Relay 负责让这个 Agent 被团队调用。
-
-## 它是怎么工作的？
-
-```text
-同事提交需求
-      ↓
-Hub 保存任务
-      ↓
-你的 Runner 领取任务
-      ↓
-本地 Agent 或脚本执行
-      ↓
-结果返回给同事
-```
-
-Runner 会主动向 Hub 建立连接，因此不需要在你的电脑上开放公网端口。
-
-## 五分钟体验
-
-需要 Python 3.11 或更高版本。当前版本运行时不依赖第三方包。
-
-```bash
+~~~bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-```
+~~~
 
-启动 Hub：
+把一个本地命令开放给局域网：
 
-```bash
-relay hub
-```
-
-在另一个终端中接入一个最简单的自动化：
-
-```bash
-relay expose \
+~~~bash
+relay serve \
+  --host 0.0.0.0 \
+  --port 8787 \
   --name uppercase \
   --description "将文本转换为大写" \
   -- python -c 'import sys; print(sys.stdin.read().upper())'
-```
+~~~
 
-提交任务：
+OpenAgentRelay 会显示一个临时 Access Key。把这个 Key 和本机的局域网 IP 发给同事，例如 192.168.1.42。
 
-```bash
-relay ask --agent uppercase --wait "hello team"
-```
+### 2. 在同事的电脑上
 
-你应该会收到 `HELLO TEAM`。
+安装 OpenAgentRelay，然后直接调用你的电脑：
 
-也可以打开 [http://127.0.0.1:8787](http://127.0.0.1:8787)，通过简单网页提交任务。
+~~~bash
+relay ask \
+  --target http://192.168.1.42:8787 \
+  --access-key "RELAY_SERVE 显示的 KEY" \
+  "hello team"
+~~~
 
-## 0.1 版本能做什么？
+同事会收到：
 
-- 按名称登记一个 Agent 或自动化
-- 通过命令行或网页提交任务
-- 让本地 Runner 自动领取任务
-- 通过标准输入把文字需求传给任意命令
-- 把命令的输出作为任务结果返回
-- 展示清晰的任务状态和错误
+~~~text
+HELLO TEAM
+~~~
 
-## 重要说明：0.1 版本只是本地演示
+同事也可以在浏览器中打开 http://192.168.1.42:8787，然后输入同一个 Access Key。
 
-0.1 版本已经证明基本流程可以工作，但它**还不能安全地连接生产凭证或直接暴露在公网**。
+## 如何接入自己的 Agent？
 
-目前还没有：
+假设现有 Agent 会从标准输入读取需求，再把答案输出到标准输出：
 
-- 用户登录
-- 数据和资源级权限
-- 持久化任务存储
-- 隔离执行环境
-- 写操作审批
-- 凭证泄漏检测
-- 签名任务授权
+~~~bash
+relay serve \
+  --host 0.0.0.0 \
+  --name ads-report \
+  --description "查询广告数据并生成报告" \
+  -- python ads_report.py
+~~~
 
-现阶段请只在本机运行 Hub。连接真实 Agent 或凭证前，请先阅读 [SECURITY.md](SECURITY.md)。
+同事调用：
 
-## 接下来做什么？
+~~~bash
+relay ask \
+  --target http://192.168.1.42:8787 \
+  --access-key "RELAY_SERVE 显示的 KEY" \
+  "找出本周 CPA 上涨最多的广告系列"
+~~~
 
-1. 使用 SQLite 或 PostgreSQL 保存任务
-2. 增加登录、权限和审计记录
-3. 支持进度、追问、取消和文件
-4. 在更安全的容器中运行 Agent，并限制网络出口
-5. 接入 A2A 和 MCP Agent
-6. 单 Agent 路径稳定后，再增加多 Agent 工作流
+OpenAgentRelay 会把需求交给 ads_report.py，再把脚本打印的结果返回给同事。
 
-## 保持核心体验简单
+## 可以共享哪些东西？
 
-OpenAgentRelay 的核心只有三件事：
+- AI Agent
+- Python 或 Shell 脚本
+- 数据查询
+- 报告生成器
+- 内部自动化
 
-```text
-发布一个团队可用的东西
-提交一个任务
-查看执行结果
-```
+只要它能接收需求并返回结果，同事就可以调用。
 
-排队、重试、传输、存储和协议兼容等复杂性，都应该隐藏在这个简单体验之后。
+## 它和共享 Skill 有什么不同？
+
+Skill 是在教另一个 Agent 如何完成一件事。每位使用者仍然需要安装 Skill，并准备工具、环境和凭证。
+
+OpenAgentRelay 是让同事直接调用你电脑上已经能够运行的东西。
+
+| 共享 Skill | OpenAgentRelay 直连模式 |
+|---|---|
+| 每个人安装一份 | 一个可运行版本留在作者电脑 |
+| 每个人配置依赖 | 作者维护现有运行环境 |
+| 每个人都需要业务凭证 | 业务凭证留在提供能力的进程中 |
+| 更新后需要重新安装 | 作者只更新一份 |
+| 每台电脑分别执行 | 同事直接调用作者电脑 |
+
+Agent 内部仍然可以使用 Skill。Relay 只负责直接传递需求和返回结果。
+
+## Access Key 和安全说明
+
+每个服务都有一个共享 Access Key：
+
+- 可以通过 --access-key 或 RELAY_ACCESS_KEY 指定；
+- 如果没有指定，relay serve 会在启动时自动生成临时 Key。
+
+这个 Key 只用于控制谁能调用 Agent。它不是 Agent 内部使用的 Google、数据库或其他业务凭证。
+
+0.1 版本仍然使用普通 HTTP。Key 在网络传输中没有加密，也不能区分具体是哪位同事。它只能用于可信局域网。不要把端口暴露到公网，也不要接入生产写操作。
+
+连接真实 Agent 前，请阅读 [SECURITY.md](SECURITY.md)。
+
+## 0.1 版本包含什么？
+
+- 两台电脑之间直接调用
+- 共享 Access Key
+- 简单的命令行客户端
+- 简单的浏览器页面
+- 通过 /.well-known/agent-card.json 查看 Agent 说明
+- 通过 stdin/stdout 接入现有命令
+- 不向调用者返回本地 stderr 的结构化错误
+
+## 0.1 版本暂时没有什么？
+
+- 自动发现局域网内的电脑
+- 每位用户独立登录和权限
+- TLS 加密
+- 离线任务和队列
+- 进度更新和文件传输
+- 一个地址挂载多个 Agent
+- 公网连接能力
+
+## 如果需要 Hub 呢？
+
+之前完成的异步 Hub + Runner 方案保留在 [hub-mode 分支](https://github.com/ShakespeareLabs/open-agent-relay/tree/hub-mode)。它是另一种网络模式，和直连模式分开维护。
+
+main 分支只专注解决一个问题：**让同一局域网内的同事直接调用你电脑上正在运行的 Agent。**
 
 项目采用 Apache-2.0 许可证。

@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "open-agent-relay"
 version = "0.1.0"
-description = "Share what your agent can do—not its code, environment, or secrets."
+description = "Let teammates call your local agent or automation directly over the LAN."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 authors = [{ name = "ShakespeareLabs" }]
-keywords = ["agents", "a2a", "task-queue", "local-first", "self-hosted"]
+keywords = ["agents", "automation", "lan", "local-first", "self-hosted"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",

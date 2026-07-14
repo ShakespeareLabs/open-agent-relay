@@ -2,181 +2,158 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Turn any local agent or automation into something your whole team can use.**
+> **Turn any local agent or automation into a team-callable capability.**
 
-## What does this project do?
+The `main` branch starts with the simplest mode: direct calls over a trusted LAN.
 
-Imagine you built a script that can check ad data, summarize interviews, or generate a weekly report.
+## What does it solve?
 
-It works on your computer, but when a teammate wants to use it, you normally have to send them:
+You already have an agent or script that works on your computer. A teammate wants to use it.
 
-- the code
-- setup instructions
-- dependencies
-- prompts and rules
-- API tokens or account configuration
+Normally, you send them the code, dependencies, setup guide, prompts, and credentials so they can run another copy.
 
-Then every teammate has to install and maintain their own copy.
+OpenAgentRelay lets them call the working copy on your computer instead.
 
-OpenAgentRelay takes a different approach:
+~~~text
+Teammate's computer  ──local network──>  Your computer  ──>  Your agent
+                                                |
+Teammate receives result  <─────────────────────┘
+~~~
 
-1. Your working agent or script stays on your computer or server.
-2. You give it a name in the team Hub, such as `ads-report`.
-3. A teammate sends a request to that name.
-4. Your agent runs the task and sends the result back.
+The main branch does not need a Hub. Your code, environment, prompts, and business credentials stay on your machine.
 
-Your teammates use the result without installing your project or receiving a copy of its credentials.
+## Two-computer example
 
-## A simple example
+Both computers must be on the same trusted local network.
 
-You have a local script called `ads_report.py`.
+### 1. On the computer that owns the agent
 
-You make it available to your team:
+Install the project:
 
-```bash
-relay expose \
-  --name ads-report \
-  --description "Check ad data and create a report" \
-  -- python ads_report.py
-```
-
-A teammate can now submit:
-
-```bash
-relay ask \
-  --agent ads-report \
-  --wait \
-  "Show me the campaigns with the biggest CPA increase this week"
-```
-
-OpenAgentRelay sends the request to your running script and returns its answer to the teammate.
-
-The script still runs where you control it. Its code and credentials do not need to be sent to the caller.
-
-## Is this only for AI agents?
-
-No. You can connect:
-
-- an AI agent
-- a Python or shell script
-- an internal automation
-- a data query tool
-- a report generator
-- an existing HTTP or A2A agent in a future adapter
-
-OpenAgentRelay calls all of these **capabilities**: things that can accept a task and return a result.
-
-## How is this different from sharing a Skill?
-
-A Skill teaches another agent **how to do something**. The user has to install it and provide the tools, environment, and credentials it needs.
-
-OpenAgentRelay lets people **use something that is already running**.
-
-| Sharing a Skill | Using OpenAgentRelay |
-|---|---|
-| Everyone installs a copy | The author runs one working copy |
-| Everyone sets up dependencies | The author maintains the working environment |
-| Everyone configures credentials | Credentials can stay with the runner |
-| Updates require reinstalling | The author updates once |
-| Work happens separately on each computer | Requests and results go through one task Hub |
-
-Skills and OpenAgentRelay can work together. An agent may use many Skills internally, while Relay makes that agent available to the team.
-
-## How it works
-
-```text
-Teammate submits a request
-          ↓
-The Hub stores the task
-          ↓
-Your Runner picks it up
-          ↓
-Your local agent or script runs
-          ↓
-The result goes back to the teammate
-```
-
-The Runner connects outward to the Hub. You do not need to open a public port on your computer.
-
-## Try it in five minutes
-
-You need Python 3.11 or newer. The current version has no third-party runtime dependencies.
-
-```bash
+~~~bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-```
+~~~
 
-Start the Hub:
+Serve a local command on the LAN:
 
-```bash
-relay hub
-```
-
-In another terminal, publish a tiny example automation:
-
-```bash
-relay expose \
+~~~bash
+relay serve \
+  --host 0.0.0.0 \
+  --port 8787 \
   --name uppercase \
   --description "Turn text into uppercase" \
   -- python -c 'import sys; print(sys.stdin.read().upper())'
-```
+~~~
 
-Submit a task:
+OpenAgentRelay prints a temporary access key. Share that key and this computer's local IP address with your teammate. For example, the IP may be 192.168.1.42.
 
-```bash
-relay ask --agent uppercase --wait "hello team"
-```
+### 2. On a teammate's computer
 
-You should receive `HELLO TEAM`.
+Install OpenAgentRelay, then call the machine directly:
 
-You can also open [http://127.0.0.1:8787](http://127.0.0.1:8787) and submit a task from the small Web interface.
+~~~bash
+relay ask \
+  --target http://192.168.1.42:8787 \
+  --access-key "KEY_PRINTED_BY_RELAY_SERVE" \
+  "hello team"
+~~~
 
-## What version 0.1 can do
+The teammate receives:
 
-- register an agent or automation by name
-- accept tasks from the CLI or Web page
-- let a local Runner pick up tasks
-- pass text into any command through standard input
-- return command output as the task result
-- show clear task states and errors
+~~~text
+HELLO TEAM
+~~~
 
-## Important: version 0.1 is a local demo
+They can also open http://192.168.1.42:8787 in a browser and enter the same access key.
 
-Version 0.1 proves the basic idea, but it is **not ready for production credentials or the public internet**.
+## Use your own agent
 
-It does not yet include:
+If your existing agent reads a request from standard input and prints its answer to standard output:
 
-- user login
-- resource-level permissions
-- persistent task storage
-- isolated execution
-- approval steps for write operations
-- secret scanning
-- signed task permissions
+~~~bash
+relay serve \
+  --host 0.0.0.0 \
+  --name ads-report \
+  --description "Check ad data and create a report" \
+  -- python ads_report.py
+~~~
 
-Keep the Hub on localhost for now. Read [SECURITY.md](SECURITY.md) before connecting a real agent or credential.
+A teammate calls it with:
 
-## What comes next
+~~~bash
+relay ask \
+  --target http://192.168.1.42:8787 \
+  --access-key "KEY_PRINTED_BY_RELAY_SERVE" \
+  "Show the campaigns with the biggest CPA increase this week"
+~~~
 
-1. Save tasks in SQLite or PostgreSQL
-2. Add login, permissions, and audit records
-3. Support progress updates, questions, cancellation, and files
-4. Run agents in safer containers with network controls
-5. Connect A2A and MCP agents
-6. Add multi-agent workflows after the single-agent path is reliable
+OpenAgentRelay passes the request to ads_report.py and returns whatever the script prints.
 
-## The small core
+## What can be shared?
 
-OpenAgentRelay is built around three simple actions:
+- an AI agent
+- a Python or shell script
+- a data query
+- a report generator
+- an internal automation
 
-```text
-publish something the team can use
-submit a task
-watch the result
-```
+If it accepts a request and returns a result, a teammate can call it.
 
-Queueing, retries, transport, storage, and protocol support should stay behind this simple experience.
+## How is this different from sharing a Skill?
+
+A Skill teaches another agent how to do something. Every user still has to install it and prepare its tools, environment, and credentials.
+
+OpenAgentRelay lets teammates call something that is already working on your computer.
+
+| Sharing a Skill | OpenAgentRelay direct mode |
+|---|---|
+| Everyone installs a copy | One working copy stays on the author's machine |
+| Everyone configures dependencies | The author keeps the working environment |
+| Everyone needs business credentials | Business credentials stay with the serving process |
+| Updates require reinstalling | The author updates one copy |
+| Work runs separately on every machine | Teammates call the author's machine directly |
+
+An agent can still use Skills internally. Relay only handles the direct request and response.
+
+## Access key and security
+
+Each server has one shared access key:
+
+- provide one with --access-key or RELAY_ACCESS_KEY, or
+- let relay serve generate a temporary key at startup.
+
+This key controls who can invoke the agent. It is not the Google, database, or other business credential used by the agent.
+
+Version 0.1 still uses plain HTTP. The key is not encrypted while traveling over the network and it does not identify individual teammates. Use it only on a trusted LAN. Do not expose the port to the public internet or connect production write operations.
+
+Read [SECURITY.md](SECURITY.md) before connecting a real agent.
+
+## What version 0.1 includes
+
+- direct calls between two computers
+- a shared access key
+- a small command-line client
+- a small browser page
+- an agent description at /.well-known/agent-card.json
+- a stdin/stdout adapter for existing commands
+- structured errors that hide local stderr from callers
+
+## What version 0.1 does not include
+
+- automatic discovery of computers
+- per-user login or permissions
+- TLS encryption
+- offline tasks or queues
+- progress updates or file transfer
+- multiple agents behind one address
+- public-internet connectivity
+
+## Want the Hub experiment?
+
+The earlier asynchronous Hub + Runner design is preserved on the [hub-mode branch](https://github.com/ShakespeareLabs/open-agent-relay/tree/hub-mode). It is a different mode with a different network model.
+
+The main branch stays focused on one problem: **a teammate on the same LAN directly calls the agent running on your computer.**
 
 Licensed under Apache-2.0.
