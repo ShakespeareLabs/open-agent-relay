@@ -34,6 +34,7 @@ def parser() -> argparse.ArgumentParser:
     ask.add_argument("--access-key", help="prefer RELAY_ACCESS_KEY to avoid shell history")
     ask.add_argument("--request-timeout", type=_positive_float)
     ask.add_argument("--caller-id")
+    ask.add_argument("--expect-agent", help="refuse the call if the agent card has a different name")
     session = ask.add_mutually_exclusive_group()
     session.add_argument("--new-conversation", action="store_true")
     session.add_argument("--conversation")
@@ -56,6 +57,11 @@ def _positive_float(value: str) -> float:
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than zero")
     return parsed
+
+
+def _validate_key(value: str) -> None:
+    if len(value) < 16:
+        raise SystemExit("access key must contain at least 16 characters")
 
 
 def main() -> None:
@@ -82,6 +88,7 @@ def _run() -> None:
         if not command:
             raise SystemExit("an agent command is required after --")
         access_key = args.access_key or os.getenv("RELAY_ACCESS_KEY") or secrets.token_urlsafe(24)
+        _validate_key(access_key)
         print(f"Access key: {access_key}")
         executor = partial(run_command, command, timeout=args.execution_timeout)
         serve(
@@ -101,11 +108,20 @@ def _run() -> None:
         access_key = args.access_key or os.getenv("RELAY_ACCESS_KEY")
         if not access_key:
             raise SystemExit("--access-key or RELAY_ACCESS_KEY is required")
+        _validate_key(access_key)
         uses_conversation = args.new_conversation or args.conversation
         caller_id = args.caller_id or os.getenv("RELAY_CALLER_ID")
         if uses_conversation and not caller_id:
             caller_id = _load_or_create_caller_id()
         client = RelayClient(args.target, access_key, caller_id=caller_id, timeout=args.request_timeout)
+        if args.expect_agent:
+            actual_agent = client.card().get("name")
+            if actual_agent != args.expect_agent:
+                raise RelayClientError(
+                    409,
+                    "AGENT_MISMATCH",
+                    f"expected agent {args.expect_agent!r}, got {actual_agent!r}",
+                )
         response = client.invoke(
             args.prompt,
             new_conversation=args.new_conversation,

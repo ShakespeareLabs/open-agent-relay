@@ -64,7 +64,13 @@ class RelayClient:
         if path != "/v1/invoke":
             return 10
         card = self.card()
-        return float(card.get("limits", {}).get("execution_timeout_seconds", 600)) + 10
+        try:
+            advertised = float(card.get("limits", {}).get("execution_timeout_seconds", 600))
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise RelayClientError(None, "INVALID_AGENT_CARD", "execution timeout is invalid") from exc
+        if advertised <= 0 or advertised > 86_400:
+            raise RelayClientError(None, "INVALID_AGENT_CARD", "execution timeout is outside the supported range")
+        return advertised + 10
 
     def card(self) -> dict[str, Any]:
         return self.request("GET", "/.well-known/agent-card.json")

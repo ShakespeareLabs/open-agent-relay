@@ -31,6 +31,7 @@ class DirectModeTests(unittest.TestCase):
         card = client.card()
         self.assertEqual(card["name"], "uppercase")
         self.assertEqual(card["authentication"], "bearer")
+        self.assertEqual(card["limits"]["execution_timeout_seconds"], 600)
 
     def test_authorized_caller_can_invoke(self) -> None:
         client = RelayClient(self.target, "team-secret")

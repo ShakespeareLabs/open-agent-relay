@@ -58,10 +58,12 @@ read -s RELAY_ACCESS_KEY
 export RELAY_ACCESS_KEY
 relay ask \
   --target http://192.168.1.42:8787 \
+  --expect-agent uppercase \
   "hello team"
 ~~~
 
 使用 `RELAY_ACCESS_KEY` 可以避免 Key 出现在命令参数和 Shell 历史中。
+`--expect-agent` 会在执行前核对公开 Agent Card，防止误调到名称不符的 Agent。普通 HTTP 仍然不能从密码学上证明服务器身份。
 
 同事会收到：
 

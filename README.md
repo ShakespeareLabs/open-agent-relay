@@ -58,10 +58,12 @@ read -s RELAY_ACCESS_KEY
 export RELAY_ACCESS_KEY
 relay ask \
   --target http://192.168.1.42:8787 \
+  --expect-agent uppercase \
   "hello team"
 ~~~
 
 Using `RELAY_ACCESS_KEY` keeps the key out of the command line and shell history.
+`--expect-agent` checks the public agent card before execution and prevents accidental calls to the wrong name. Plain HTTP still cannot prove the server's cryptographic identity.
 
 The teammate receives:
 
