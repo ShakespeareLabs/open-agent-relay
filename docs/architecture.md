@@ -26,8 +26,9 @@ Local script or agent + its own tools and credentials
 - Local command runner using stdin/stdout
 - HTTP/JSON client
 - Bounded in-memory conversation store with caller binding and expiry
+- Execution timeout plus combined stdout/stderr size enforcement
 
-The default request is stateless. Optional conversations store a bounded transcript, not a Codex session, and prepend relevant prior turns to the next execution. The server publishes its execution timeout in the agent card so clients can select a compatible request timeout automatically.
+The command adapter starts one process per request. It sends the request to stdin, treats stdout as the final result, and keeps stderr local. The default request is stateless. Optional conversations store a bounded transcript, not a Codex session, and prepend relevant prior turns to the next execution. The server publishes its execution, request, and output limits in the Agent Card so clients and operators can inspect the boundary.
 
 ## Planned adapters
 

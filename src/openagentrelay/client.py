@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlparse
 
 
 class RelayClientError(RuntimeError):
@@ -19,6 +21,11 @@ class RelayClientError(RuntimeError):
 
 class RelayClient:
     def __init__(self, target: str, access_key: str, caller_id: str | None = None, timeout: float | None = None):
+        parsed = urlparse(target)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise RelayClientError(None, "INVALID_TARGET", "target must be an http:// or https:// URL")
+        if timeout is not None and (not math.isfinite(timeout) or timeout <= 0):
+            raise RelayClientError(None, "INVALID_TIMEOUT", "request timeout must be a finite number greater than zero")
         self.target = target.rstrip("/")
         self.access_key = access_key
         self.caller_id = caller_id
@@ -37,7 +44,14 @@ class RelayClient:
             with urlopen(request, timeout=timeout) as response:
                 if response.status == 204:
                     return None
-                return json.loads(response.read())
+                try:
+                    return json.loads(response.read())
+                except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                    raise RelayClientError(
+                        response.status,
+                        "INVALID_RESPONSE",
+                        "agent returned a response that is not valid JSON",
+                    ) from exc
         except HTTPError as exc:
             detail = exc.read().decode()
             exc.close()
@@ -68,12 +82,15 @@ class RelayClient:
             advertised = float(card.get("limits", {}).get("execution_timeout_seconds", 600))
         except (AttributeError, TypeError, ValueError) as exc:
             raise RelayClientError(None, "INVALID_AGENT_CARD", "execution timeout is invalid") from exc
-        if advertised <= 0 or advertised > 86_400:
+        if not math.isfinite(advertised) or advertised <= 0 or advertised > 86_400:
             raise RelayClientError(None, "INVALID_AGENT_CARD", "execution timeout is outside the supported range")
         return advertised + 10
 
     def card(self) -> dict[str, Any]:
-        return self.request("GET", "/.well-known/agent-card.json")
+        response = self.request("GET", "/.well-known/agent-card.json")
+        if not isinstance(response, dict):
+            raise RelayClientError(None, "INVALID_AGENT_CARD", "agent card must be a JSON object")
+        return response
 
     def invoke(
         self,
@@ -87,4 +104,7 @@ class RelayClient:
             data["new_conversation"] = True
         if conversation_id:
             data["conversation_id"] = conversation_id
-        return self.request("POST", "/v1/invoke", data)
+        response = self.request("POST", "/v1/invoke", data)
+        if not isinstance(response, dict):
+            raise RelayClientError(None, "INVALID_RESPONSE", "agent response must be a JSON object")
+        return response

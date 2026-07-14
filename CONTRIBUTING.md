@@ -12,3 +12,17 @@ python -m unittest discover -s tests -v
 ```
 
 Keep the default path dependency-free, local-first, and Hub-free. The `main` branch is for direct local-network access; the `hub-mode` branch preserves the asynchronous Hub experiment. New execution, identity, and protocol implementations should sit behind explicit adapters.
+
+## Release checks
+
+Build release artifacts from a fresh checkout. Setuptools can reuse an ignored `build/` directory, so a working tree that previously built another branch must not be used as the release source.
+
+Before tagging a release:
+
+```bash
+rm -rf build dist src/*.egg-info
+python -m pip wheel . --no-deps -w dist
+python -m unittest discover -s tests -v
+```
+
+Install the wheel in a new virtual environment, run the tests against that installed package, and confirm the wheel contains only the modules tracked on the release branch.

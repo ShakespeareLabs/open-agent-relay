@@ -1,11 +1,20 @@
+import contextlib
+import io
 import json
+import os
 import subprocess
+import sys
 import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest import mock
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from openagentrelay.cli import parser
+from openagentrelay import cli
 from openagentrelay.client import RelayClient
+from openagentrelay.runner import CommandOutputTooLarge
 from openagentrelay.server import DirectServer
 
 
@@ -32,6 +41,7 @@ class DirectModeTests(unittest.TestCase):
         self.assertEqual(card["name"], "uppercase")
         self.assertEqual(card["authentication"], "bearer")
         self.assertEqual(card["limits"]["execution_timeout_seconds"], 600)
+        self.assertEqual(card["limits"]["max_output_bytes"], 1_048_576)
 
     def test_authorized_caller_can_invoke(self) -> None:
         client = RelayClient(self.target, "team-secret")
@@ -149,6 +159,149 @@ class DirectModeTests(unittest.TestCase):
         finally:
             release.set()
             first.join(2)
+
+    def test_busy_new_conversation_does_not_leave_orphan(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow(value: object) -> object:
+            started.set()
+            release.wait(2)
+            return value
+
+        self.server.executor = slow
+        self.server.execution_slots = threading.BoundedSemaphore(1)
+        first = threading.Thread(target=lambda: RelayClient(self.target, "team-secret").invoke("first"))
+        first.start()
+        self.assertTrue(started.wait(1))
+        try:
+            with self.assertRaisesRegex(RuntimeError, "BUSY"):
+                RelayClient(self.target, "team-secret", caller_id="caller-a").invoke(
+                    "second",
+                    new_conversation=True,
+                )
+            self.assertEqual(len(self.server.conversations), 0)
+        finally:
+            release.set()
+            first.join(2)
+
+    def test_failed_new_conversation_does_not_leave_orphan(self) -> None:
+        def fail(_: object) -> object:
+            raise RuntimeError("broken")
+
+        self.server.executor = fail
+        with self.assertRaisesRegex(RuntimeError, "EXECUTION_FAILED"):
+            RelayClient(self.target, "team-secret", caller_id="caller-a").invoke(
+                "hello",
+                new_conversation=True,
+            )
+        self.assertEqual(len(self.server.conversations), 0)
+
+    def test_output_limit_error_is_structured(self) -> None:
+        def oversized(_: object) -> object:
+            raise CommandOutputTooLarge(1024)
+
+        self.server.executor = oversized
+        with self.assertRaisesRegex(RuntimeError, "OUTPUT_TOO_LARGE"):
+            RelayClient(self.target, "team-secret").invoke("hello")
+
+
+class ClientValidationTests(unittest.TestCase):
+    def test_configured_key_is_not_printed(self) -> None:
+        secret = "configured-secret-key"
+        output = io.StringIO()
+        argv = [
+            "relay",
+            "serve",
+            "--name",
+            "test",
+            "--",
+            sys.executable,
+            "-c",
+            "print('ok')",
+        ]
+        with (
+            mock.patch.dict(os.environ, {"RELAY_ACCESS_KEY": secret}, clear=True),
+            mock.patch.object(sys, "argv", argv),
+            mock.patch("openagentrelay.cli.serve"),
+            contextlib.redirect_stdout(output),
+        ):
+            cli.main()
+        self.assertNotIn(secret, output.getvalue())
+        self.assertIn("loaded from configuration", output.getvalue())
+
+    def test_non_finite_request_timeout_is_rejected_by_cli(self) -> None:
+        for value in ("nan", "inf", "-inf"):
+            with self.subTest(value=value), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                parser().parse_args(
+                    [
+                        "ask",
+                        "--target",
+                        "http://127.0.0.1:8787",
+                        f"--request-timeout={value}",
+                        "hello",
+                    ]
+                )
+
+    def test_target_requires_http_url(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "INVALID_TARGET"):
+            RelayClient("127.0.0.1:8787", "team-secret")
+
+    def test_programmatic_timeout_must_be_finite_and_positive(self) -> None:
+        for value in (float("nan"), float("inf"), 0, -1):
+            with self.subTest(value=value), self.assertRaisesRegex(RuntimeError, "INVALID_TIMEOUT"):
+                RelayClient("http://127.0.0.1:8787", "team-secret", timeout=value)
+
+    def test_invalid_success_response_is_structured(self) -> None:
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+            def do_GET(self) -> None:
+                self._send(json.dumps({"name": "test", "limits": {"execution_timeout_seconds": 1}}).encode())
+
+            def do_POST(self) -> None:
+                self._send(b"not-json")
+
+            def _send(self, body: bytes) -> None:
+                self.send_response(200)
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = RelayClient(f"http://127.0.0.1:{server.server_port}", "team-secret")
+            with self.assertRaisesRegex(RuntimeError, "INVALID_RESPONSE"):
+                client.invoke("hello")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_non_object_agent_card_is_structured(self) -> None:
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, format: str, *args: object) -> None:
+                return
+
+            def do_GET(self) -> None:
+                body = b"[]"
+                self.send_response(200)
+                self.send_header("content-length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            client = RelayClient(f"http://127.0.0.1:{server.server_port}", "team-secret")
+            with self.assertRaisesRegex(RuntimeError, "INVALID_AGENT_CARD"):
+                client.card()
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

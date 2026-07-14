@@ -14,7 +14,18 @@ keywords = ["agents", "automation", "lan", "local-first", "self-hosted"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Operating System :: OS Independent",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ShakespeareLabs/open-agent-relay"
+Repository = "https://github.com/ShakespeareLabs/open-agent-relay"
+Issues = "https://github.com/ShakespeareLabs/open-agent-relay/issues"
+Documentation = "https://github.com/ShakespeareLabs/open-agent-relay#readme"
 
 [project.scripts]
 relay = "openagentrelay.cli:main"

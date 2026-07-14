@@ -61,6 +61,16 @@ class ConversationStore:
             conversation.updated_at = time.monotonic()
             return conversation
 
+    def discard(self, conversation: Conversation) -> None:
+        with self._lock:
+            if self._items.get(conversation.id) is conversation:
+                del self._items[conversation.id]
+
+    def __len__(self) -> int:
+        with self._lock:
+            self._remove_expired()
+            return len(self._items)
+
     def render(self, conversation: Conversation, input_value: object) -> object:
         if not conversation.turns:
             return input_value

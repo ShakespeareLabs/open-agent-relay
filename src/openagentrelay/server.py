@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
 
-from .runner import CommandFailed
+from .runner import CommandFailed, CommandOutputTooLarge
 from .conversations import ConversationForbidden, ConversationNotFound, ConversationStore
 
 
@@ -50,6 +50,7 @@ class DirectServer(ThreadingHTTPServer):
         access_key: str,
         execution_timeout: int = 600,
         max_request_bytes: int = 1_048_576,
+        max_output_bytes: int = 1_048_576,
         max_concurrency: int = 4,
         conversation_ttl: int = 3600,
     ) -> None:
@@ -59,6 +60,7 @@ class DirectServer(ThreadingHTTPServer):
         self.access_key = access_key
         self.execution_timeout = execution_timeout
         self.max_request_bytes = max_request_bytes
+        self.max_output_bytes = max_output_bytes
         self.execution_slots = threading.BoundedSemaphore(max_concurrency)
         self.conversations = ConversationStore(ttl_seconds=conversation_ttl)
         super().__init__(address, DirectHandler)
@@ -126,6 +128,7 @@ class DirectHandler(BaseHTTPRequestHandler):
                     "limits": {
                         "execution_timeout_seconds": self.server.execution_timeout,
                         "max_request_bytes": self.server.max_request_bytes,
+                        "max_output_bytes": self.server.max_output_bytes,
                     },
                 },
             )
@@ -140,6 +143,8 @@ class DirectHandler(BaseHTTPRequestHandler):
         if not self._authorized():
             self._error(HTTPStatus.UNAUTHORIZED, "UNAUTHORIZED", "a valid access key is required")
             return
+        created_conversation = None
+        completed = False
         try:
             data = self._json_body()
             if "input" not in data:
@@ -155,6 +160,7 @@ class DirectHandler(BaseHTTPRequestHandler):
             conversation = None
             if new_conversation:
                 conversation = self.server.conversations.create(caller_id)
+                created_conversation = conversation
             elif conversation_id:
                 if not isinstance(conversation_id, str):
                     raise RequestProblem(HTTPStatus.BAD_REQUEST, "INVALID_REQUEST", "conversation_id must be a string")
@@ -182,6 +188,7 @@ class DirectHandler(BaseHTTPRequestHandler):
                 HTTPStatus.OK,
                 payload,
             )
+            completed = True
         except RequestProblem as exc:
             self._error(exc.status, exc.code, exc.message)
         except json.JSONDecodeError:
@@ -192,12 +199,17 @@ class DirectHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.FORBIDDEN, exc.code, str(exc))
         except subprocess.TimeoutExpired:
             self._error(HTTPStatus.GATEWAY_TIMEOUT, "EXECUTION_TIMEOUT", "agent execution timed out")
+        except CommandOutputTooLarge:
+            self._error(HTTPStatus.BAD_GATEWAY, "OUTPUT_TOO_LARGE", "agent output exceeded the configured limit")
         except CommandFailed as exc:
             print(f"Agent command failed locally: {exc.detail}")
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "EXECUTION_FAILED", str(exc))
         except Exception as exc:
             print(f"Agent execution failed locally: {exc}")
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "EXECUTION_FAILED", "agent execution failed")
+        finally:
+            if created_conversation is not None and not completed:
+                self.server.conversations.discard(created_conversation)
 
 
 def serve(
@@ -210,6 +222,7 @@ def serve(
     access_key: str,
     execution_timeout: int = 600,
     max_request_bytes: int = 1_048_576,
+    max_output_bytes: int = 1_048_576,
     max_concurrency: int = 4,
     conversation_ttl: int = 3600,
 ) -> None:
@@ -221,8 +234,9 @@ def serve(
         access_key=access_key,
         execution_timeout=execution_timeout,
         max_request_bytes=max_request_bytes,
+        max_output_bytes=max_output_bytes,
         max_concurrency=max_concurrency,
         conversation_ttl=conversation_ttl,
     )
-    print(f"Serving {name} on http://{host}:{port}")
+    print(f"Serving {name} on http://{host}:{port}", flush=True)
     server.serve_forever()

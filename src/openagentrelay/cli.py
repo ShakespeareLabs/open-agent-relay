@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import secrets
 import sys
@@ -25,6 +26,7 @@ def parser() -> argparse.ArgumentParser:
     serve_parser.add_argument("--access-key")
     serve_parser.add_argument("--execution-timeout", type=_positive_int, default=600)
     serve_parser.add_argument("--max-request-bytes", type=_positive_int, default=1_048_576)
+    serve_parser.add_argument("--max-output-bytes", type=_positive_int, default=1_048_576)
     serve_parser.add_argument("--max-concurrency", type=_positive_int, default=4)
     serve_parser.add_argument("--conversation-ttl", type=_positive_int, default=3600)
     serve_parser.add_argument("agent_command", nargs=argparse.REMAINDER)
@@ -54,8 +56,8 @@ def _positive_int(value: str) -> int:
 
 def _positive_float(value: str) -> float:
     parsed = float(value)
-    if parsed <= 0:
-        raise argparse.ArgumentTypeError("must be greater than zero")
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a finite number greater than zero")
     return parsed
 
 
@@ -72,6 +74,15 @@ def main() -> None:
     except RelayClientError as exc:
         print(json.dumps(exc.to_dict(), ensure_ascii=False), file=sys.stderr)
         raise SystemExit(1) from None
+    except OSError as exc:
+        print(
+            json.dumps(
+                {"error": {"status": None, "code": "LOCAL_ERROR", "message": str(exc)}},
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
+        raise SystemExit(1) from None
 
 
 def _run() -> None:
@@ -87,10 +98,19 @@ def _run() -> None:
             command = command[1:]
         if not command:
             raise SystemExit("an agent command is required after --")
-        access_key = args.access_key or os.getenv("RELAY_ACCESS_KEY") or secrets.token_urlsafe(24)
+        configured_key = args.access_key or os.getenv("RELAY_ACCESS_KEY")
+        access_key = configured_key or secrets.token_urlsafe(24)
         _validate_key(access_key)
-        print(f"Access key: {access_key}")
-        executor = partial(run_command, command, timeout=args.execution_timeout)
+        if configured_key:
+            print("Access key: loaded from configuration", flush=True)
+        else:
+            print(f"Generated access key: {access_key}", flush=True)
+        executor = partial(
+            run_command,
+            command,
+            timeout=args.execution_timeout,
+            max_output_bytes=args.max_output_bytes,
+        )
         serve(
             args.host,
             args.port,
@@ -100,6 +120,7 @@ def _run() -> None:
             access_key=access_key,
             execution_timeout=args.execution_timeout,
             max_request_bytes=args.max_request_bytes,
+            max_output_bytes=args.max_output_bytes,
             max_concurrency=args.max_concurrency,
             conversation_ttl=args.conversation_ttl,
         )

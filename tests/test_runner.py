@@ -1,7 +1,9 @@
+import subprocess
 import sys
 import unittest
+from unittest import mock
 
-from openagentrelay.runner import CommandFailed, run_command
+from openagentrelay.runner import CommandFailed, CommandOutputTooLarge, run_command
 
 
 class RunnerTests(unittest.TestCase):
@@ -20,6 +22,32 @@ class RunnerTests(unittest.TestCase):
             )
         self.assertEqual(str(raised.exception), "agent command failed")
         self.assertEqual(raised.exception.detail, "broken")
+
+    def test_output_limit_stops_oversized_command(self) -> None:
+        with self.assertRaises(CommandOutputTooLarge):
+            run_command(
+                [sys.executable, "-c", "print('x' * 100000)"],
+                "hello",
+                max_output_bytes=1024,
+            )
+
+    def test_timeout_stops_command(self) -> None:
+        with self.assertRaises(subprocess.TimeoutExpired):
+            run_command(
+                [sys.executable, "-c", "import time; time.sleep(2)"],
+                "hello",
+                timeout=0.05,
+            )
+
+    def test_relay_credentials_are_not_passed_to_agent_command(self) -> None:
+        command = [
+            sys.executable,
+            "-c",
+            "import os; print(os.getenv('RELAY_ACCESS_KEY', ''))",
+        ]
+        with mock.patch.dict("os.environ", {"RELAY_ACCESS_KEY": "do-not-expose"}):
+            output = run_command(command, "hello")
+        self.assertEqual(output, "")
 
 
 if __name__ == "__main__":
