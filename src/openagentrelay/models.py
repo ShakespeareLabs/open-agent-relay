@@ -42,14 +42,23 @@ class Task:
     result: Any | None = None
     error: str | None = None
     attempt: int = 0
+    max_attempts: int = 3
+    lease_id: str | None = None
+    lease_expires_at: str | None = None
+    last_failure_lease_id: str | None = None
+    last_failure_error: str | None = None
     created_at: str = field(default_factory=now_iso)
     updated_at: str = field(default_factory=now_iso)
 
     def touch(self) -> None:
         self.updated_at = now_iso()
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self, *, include_lease: bool = False) -> dict[str, Any]:
         data = asdict(self)
         data["status"] = self.status.value
+        if not include_lease:
+            data.pop("lease_id")
+            data.pop("lease_expires_at")
+        data.pop("last_failure_lease_id")
+        data.pop("last_failure_error")
         return data
-

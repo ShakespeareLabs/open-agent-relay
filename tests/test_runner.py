@@ -1,7 +1,8 @@
 import sys
 import unittest
 
-from openagentrelay.runner import CommandFailed, run_command
+from openagentrelay.client import RelayClientError
+from openagentrelay.runner import CommandFailed, _post_final, run_command
 
 
 class RunnerTests(unittest.TestCase):
@@ -20,6 +21,20 @@ class RunnerTests(unittest.TestCase):
             )
         self.assertEqual(str(raised.exception), "agent command failed")
         self.assertEqual(raised.exception.detail, "broken")
+
+    def test_final_update_retries_transient_network_error(self) -> None:
+        class FakeClient:
+            calls = 0
+
+            def request(self, method, path, data):
+                self.calls += 1
+                if self.calls == 1:
+                    raise RelayClientError(None, "CONNECTION_ERROR", "lost response")
+                return {"status": "completed"}
+
+        client = FakeClient()
+        _post_final(client, "/complete", {"result": "done"})
+        self.assertEqual(client.calls, 2)
 
 
 if __name__ == "__main__":

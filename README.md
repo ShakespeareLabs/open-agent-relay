@@ -1,182 +1,132 @@
-# OpenAgentRelay
+# OpenAgentRelay — Hub mode
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-> **Turn any local agent or automation into something your whole team can use.**
+> **Submit work to a remote agent without copying its code, environment, or business credentials.**
 
-## What does this project do?
-
-Imagine you built a script that can check ad data, summarize interviews, or generate a weekly report.
-
-It works on your computer, but when a teammate wants to use it, you normally have to send them:
-
-- the code
-- setup instructions
-- dependencies
-- prompts and rules
-- API tokens or account configuration
-
-Then every teammate has to install and maintain their own copy.
-
-OpenAgentRelay takes a different approach:
-
-1. Your working agent or script stays on your computer or server.
-2. You give it a name in the team Hub, such as `ads-report`.
-3. A teammate sends a request to that name.
-4. Your agent runs the task and sends the result back.
-
-Your teammates use the result without installing your project or receiving a copy of its credentials.
-
-## A simple example
-
-You have a local script called `ads_report.py`.
-
-You make it available to your team:
-
-```bash
-relay expose \
-  --name ads-report \
-  --description "Check ad data and create a report" \
-  -- python ads_report.py
-```
-
-A teammate can now submit:
-
-```bash
-relay ask \
-  --agent ads-report \
-  --wait \
-  "Show me the campaigns with the biggest CPA increase this week"
-```
-
-OpenAgentRelay sends the request to your running script and returns its answer to the teammate.
-
-The script still runs where you control it. Its code and credentials do not need to be sent to the caller.
-
-## Is this only for AI agents?
-
-No. You can connect:
-
-- an AI agent
-- a Python or shell script
-- an internal automation
-- a data query tool
-- a report generator
-- an existing HTTP or A2A agent in a future adapter
-
-OpenAgentRelay calls all of these **capabilities**: things that can accept a task and return a result.
-
-## How is this different from sharing a Skill?
-
-A Skill teaches another agent **how to do something**. The user has to install it and provide the tools, environment, and credentials it needs.
-
-OpenAgentRelay lets people **use something that is already running**.
-
-| Sharing a Skill | Using OpenAgentRelay |
-|---|---|
-| Everyone installs a copy | The author runs one working copy |
-| Everyone sets up dependencies | The author maintains the working environment |
-| Everyone configures credentials | Credentials can stay with the runner |
-| Updates require reinstalling | The author updates once |
-| Work happens separately on each computer | Requests and results go through one task Hub |
-
-Skills and OpenAgentRelay can work together. An agent may use many Skills internally, while Relay makes that agent available to the team.
+This branch is the asynchronous Hub experiment. For direct calls on a trusted LAN, use the [`main` branch](https://github.com/ShakespeareLabs/open-agent-relay).
 
 ## How it works
 
-```text
-Teammate submits a request
-          ↓
-The Hub stores the task
-          ↓
-Your Runner picks it up
-          ↓
-Your local agent or script runs
-          ↓
-The result goes back to the teammate
-```
+~~~text
+Caller Agent → Hub stores a task → Runner claims it → Local Agent runs
+     ↑                                                   |
+     └──────────────── result through Hub ───────────────┘
+~~~
 
-The Runner connects outward to the Hub. You do not need to open a public port on your computer.
+The caller can disconnect while work runs. The Runner connects outward to the Hub, so the machine hosting the agent does not need a public inbound port.
 
-## Try it in five minutes
+## Install
 
-You need Python 3.11 or newer. The current version has no third-party runtime dependencies.
+Requires Python 3.11 or newer:
 
-```bash
+~~~bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
-```
+~~~
 
-Start the Hub:
+## 1. Start the Hub
 
-```bash
+Create two different keys without putting them in shell history:
+
+~~~bash
+read -s RELAY_ACCESS_KEY
+export RELAY_ACCESS_KEY
+read -s RELAY_RUNNER_KEY
+export RELAY_RUNNER_KEY
 relay hub
-```
+~~~
 
-In another terminal, publish a tiny example automation:
+- Share the **Client Key** with callers.
+- Share the **Runner Key** only with machines that provide capabilities.
+- If either variable is missing, `relay hub` generates and prints a temporary key.
 
-```bash
+The Client Key can list capabilities, submit tasks, and read results. It cannot publish, claim, heartbeat, complete, or fail tasks.
+
+## 2. Publish an agent
+
+On the machine where the working agent and its business credentials already exist:
+
+~~~bash
+export RELAY_RUNNER_KEY="the Hub runner key"
 relay expose \
-  --name uppercase \
-  --description "Turn text into uppercase" \
-  -- python -c 'import sys; print(sys.stdin.read().upper())'
-```
+  --hub http://HUB_ADDRESS:8787 \
+  --name ads-report \
+  --description "Check ad data and create a report" \
+  -- python ads_report.py
+~~~
 
-Submit a task:
+The command reads one request from standard input and prints one result to standard output. Its code, Skills, environment, and business credentials remain on this machine.
 
-```bash
-relay ask --agent uppercase --wait "hello team"
-```
+## 3. Ask from another agent
 
-You should receive `HELLO TEAM`.
+~~~bash
+export RELAY_ACCESS_KEY="the Hub client key"
+relay ask \
+  --hub http://HUB_ADDRESS:8787 \
+  --agent ads-report \
+  --wait \
+  --json \
+  "Show the campaigns with the largest CPA increase"
+~~~
 
-You can also open [http://127.0.0.1:8787](http://127.0.0.1:8787) and submit a task from the small Web interface.
+`--json` prints one machine-readable task object. A completed command exits with status 0. A failed, cancelled, timed-out, unauthorized, or malformed request exits nonzero.
 
-## What version 0.1 can do
+## Reliability model
 
-- register an agent or automation by name
-- accept tasks from the CLI or Web page
-- let a local Runner pick up tasks
-- pass text into any command through standard input
-- return command output as the task result
-- show clear task states and errors
+When a Runner claims a task, the Hub gives it a temporary lease:
 
-## Important: version 0.1 is a local demo
+- the Runner sends heartbeats while the agent works;
+- an expired lease returns the task to the queue;
+- the task retries up to `max_attempts` (default 3, maximum 10);
+- repeating the same completion with the same lease and result is idempotent;
+- a stale lease or a different repeated result is rejected.
 
-Version 0.1 proves the basic idea, but it is **not ready for production credentials or the public internet**.
+This is **at-least-once execution**. If a Runner performs an external side effect and loses its lease before reporting completion, a retry can execute that side effect again. Prefer read-only agents or make write operations idempotent and approval-gated.
 
-It does not yet include:
+Useful controls:
 
-- user login
-- resource-level permissions
+~~~text
+relay hub:    --lease-seconds --max-request-bytes --max-concurrency
+relay expose: --request-timeout --execution-timeout
+relay ask:    --request-timeout --wait-timeout --max-attempts
+~~~
+
+All HTTP errors use a stable JSON envelope:
+
+~~~json
+{"error":{"code":"UNAUTHORIZED","message":"valid credentials are required"}}
+~~~
+
+## Security boundary
+
+This is still a development preview:
+
+- transport is plain HTTP, not TLS;
+- Client and Runner keys identify roles, not individual people;
+- tasks and capabilities live only in memory;
+- agent execution is not sandboxed;
+- there is no per-user policy or approval gate;
+- request size and Hub concurrency are bounded, but there is no per-user rate limit.
+
+Use it only on a trusted network. Do not expose this preview directly to the public internet or connect production write operations. Read [SECURITY.md](SECURITY.md).
+
+## What this branch proves
+
+- callers and Runners can be on different networks;
+- callers do not need the agent's source code or business credentials;
+- role-separated keys prevent callers from impersonating Runners;
+- leases, heartbeats, bounded retries, and idempotent completion prevent common stuck-task failures;
+- CLI output is suitable for another Agent to parse.
+
+## Still missing
+
+- TLS and per-user identity
 - persistent task storage
-- isolated execution
-- approval steps for write operations
-- secret scanning
-- signed task permissions
-
-Keep the Hub on localhost for now. Read [SECURITY.md](SECURITY.md) before connecting a real agent or credential.
-
-## What comes next
-
-1. Save tasks in SQLite or PostgreSQL
-2. Add login, permissions, and audit records
-3. Support progress updates, questions, cancellation, and files
-4. Run agents in safer containers with network controls
-5. Connect A2A and MCP agents
-6. Add multi-agent workflows after the single-agent path is reliable
-
-## The small core
-
-OpenAgentRelay is built around three simple actions:
-
-```text
-publish something the team can use
-submit a task
-watch the result
-```
-
-Queueing, retries, transport, storage, and protocol support should stay behind this simple experience.
+- durable audit logs
+- files, progress streaming, cancellation, and approvals
+- container isolation and network egress policy
+- multiple Hub replicas
 
 Licensed under Apache-2.0.
