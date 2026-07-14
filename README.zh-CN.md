@@ -51,7 +51,7 @@ Access Key 应通过 `RELAY_ACCESS_KEY` 提供，不要直接写进发给 Agent 
 普通用户不需要克隆仓库。推荐通过 [`pipx`](https://pipx.pypa.io/) 安装 CLI：
 
 ```bash
-pipx install "git+https://github.com/ShakespeareLabs/open-agent-relay.git@main"
+pipx install open-agent-relay
 relay version
 ```
 
@@ -60,10 +60,10 @@ relay version
 如果已经进入 Python 3.11 或更高版本的虚拟环境，也可以使用：
 
 ```bash
-python -m pip install "git+https://github.com/ShakespeareLabs/open-agent-relay.git@main"
+python -m pip install open-agent-relay
 ```
 
-只有参与开发时才需要克隆仓库。首个正式安装包发布后，主要安装命令会简化为 `pipx install open-agent-relay`。
+只有参与开发时才需要克隆仓库。正式版本发布在 [PyPI](https://pypi.org/project/open-agent-relay/) 上。
 
 ## 端到端示例
 

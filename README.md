@@ -52,7 +52,7 @@ Provide the Access Key through `RELAY_ACCESS_KEY`, not inside the message. The A
 Normal users do not need to clone the repository. Install the CLI with [`pipx`](https://pipx.pypa.io/):
 
 ```bash
-pipx install "git+https://github.com/ShakespeareLabs/open-agent-relay.git@main"
+pipx install open-agent-relay
 relay version
 ```
 
@@ -61,10 +61,10 @@ If `pipx` is not installed, follow its one-time installation guide (`brew instal
 If you are already inside a Python 3.11+ virtual environment, use:
 
 ```bash
-python -m pip install "git+https://github.com/ShakespeareLabs/open-agent-relay.git@main"
+python -m pip install open-agent-relay
 ```
 
-Cloning the repository is only needed for development. After the first packaged release, the primary installation command will become `pipx install open-agent-relay`.
+Cloning the repository is only needed for development. Published releases are available on [PyPI](https://pypi.org/project/open-agent-relay/).
 
 ## End-to-end examples
 

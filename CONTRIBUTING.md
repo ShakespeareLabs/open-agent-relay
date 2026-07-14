@@ -29,7 +29,7 @@ Install the wheel in a new virtual environment, run the tests against that insta
 
 Releases are published by `.github/workflows/publish.yml` through PyPI Trusted Publishing. The GitHub release tag must exactly match `v<project.version>`, for example `v0.1.0`. The workflow builds both a wheel and source distribution, checks their metadata, and uploads only from the protected `pypi` environment.
 
-For the first release, register a pending PyPI publisher with these exact values before publishing the GitHub release:
+The PyPI project uses this Trusted Publisher configuration:
 
 | Field | Value |
 |---|---|
